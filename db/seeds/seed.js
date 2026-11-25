@@ -1,38 +1,56 @@
-const fs = require('fs');
-const path = require('path');
-const { Pool } = require('pg');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+// Execute db/seeds/*.sql (ordre alphabetique) puis hache les mots de passe en clair des comptes de demo.
+// (Ancienne version : copie de migrate.js, qui plantait sur de mauvais chemins.)
+require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
+const bcrypt = require("bcryptjs");
+const { pool } = require("../../src/config/db");
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-});
+async function runSeeds() {
+  const fichiers = fs
+    .readdirSync(__dirname)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
 
-async function runSeed() {
   const client = await pool.connect();
   try {
-    console.log(' Seed-Message : Lancement du remplissage (seed) de la base de données...');
-    
-    const seedFilePath = path.join(__dirname, '000_socle.sql');
-    if (!fs.existsSync(seedFilePath)) {
-      console.error('Seed-Message(erreur) : Fichier 000_socle.sql introuvable dans db/seeds/.');
-      process.exit(1);
+    console.log(
+      "Seed-Message : Démarrage de l'insertion des données de démo...",
+    );
+    await client.query("BEGIN");
+
+    for (const fichier of fichiers) {
+      console.log(`Seed-Message : Exécution de ${fichier}`);
+      await client.query(
+        fs.readFileSync(path.join(__dirname, fichier), "utf8"),
+      );
     }
 
-    const sql = fs.readFileSync(seedFilePath, 'utf8');
-    await client.query(sql);
+    // Les seeds contiennent des mots de passe en clair : on les hache (bcrypt) pour permettre la connexion.
+    // Les comptes de démo n'ont pas à changer leur mot de passe à la première connexion.
+    const { rows } = await client.query(
+      "SELECT id, mot_de_passe FROM utilisateurs WHERE mot_de_passe NOT LIKE '$2%'",
+    );
+    const rounds = Number(process.env.BCRYPT_ROUNDS) || 10;
+    for (const u of rows) {
+      const hash = await bcrypt.hash(u.mot_de_passe, rounds);
+      await client.query(
+        "UPDATE utilisateurs SET mot_de_passe = $1, premiere_connexion = FALSE WHERE id = $2",
+        [hash, u.id],
+      );
+    }
+    console.log(`Seed-Message : ${rows.length} mot(s) de passe haché(s).`);
 
-    console.log('Seed-Message(succes) : Données de test insérées avec succès !');
+    await client.query("COMMIT");
+    console.log("Seed-Message(succes) : Données de démo insérées.");
   } catch (error) {
-    console.error('Seed-Message(erreur) : Erreur lors du seed :', error);
-    process.exit(1);
+    await client.query("ROLLBACK");
+    console.error("Seed-Message(erreur) :", error);
+    process.exitCode = 1;
   } finally {
     client.release();
     await pool.end();
   }
 }
 
-runSeed();
+runSeeds();
