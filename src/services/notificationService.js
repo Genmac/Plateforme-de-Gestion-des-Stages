@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require("../config/db");
 
 /**
  * Enregistre une notification pour un utilisateur donné.
@@ -14,22 +14,24 @@ const notifier = async (utilisateurId, message, lien = null) => {
     `;
     // Note: si ton schéma possède les colonnes directement, adaptez les paramètres
     const values = [utilisateurId, message, lien];
-    
+
     // Requête réelle d'insertion
     const result = await db.query(
       `INSERT INTO notifications (utilisateur_id, message, lien) VALUES ($1, $2, $3) RETURNING id, utilisateur_id, message, lien, lu, created_at`,
-      values
+      values,
     );
 
-    console.log(`Notification créée pour l'utilisateur ID ${utilisateurId}: "${message}"`);
+    console.log(
+      `Notification créée pour l'utilisateur ID ${utilisateurId}: "${message}"`,
+    );
     return result.rows[0];
   } catch (error) {
-    console.error('Erreur lors de la création de la notification :', error);
+    console.error("Erreur lors de la création de la notification :", error);
     // On ne bloque pas l'action principale si la notification échoue, mais on log l'erreur
     throw error;
   }
 };
 
 module.exports = {
-  notifier
+  notifier,
 };
