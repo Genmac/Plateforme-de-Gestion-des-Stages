@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connexion — Gestion des Stages</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body
+    class="bg-slate-50 text-slate-800 min-h-screen flex items-center justify-center px-4"
+  >
+    <main class="w-full max-w-sm">
+      <h1 class="text-2xl font-bold text-indigo-600">Gestion Stages</h1>
+      <p class="text-sm text-slate-500 mt-1">Polytech Diamniadio</p>
+
+      <form
+        id="form-login"
+        class="mt-6 space-y-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm"
+        novalidate
+      >
+        <label class="block text-sm"
+          >Adresse e-mail
+          <input
+            name="email"
+            type="email"
+            autocomplete="username"
+            required
+            autofocus
+            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </label>
+        <label class="block text-sm"
+          >Mot de passe
+          <input
+            name="mot_de_passe"
+            type="password"
+            autocomplete="current-password"
+            required
+            class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </label>
+        <p
+          id="erreur"
+          role="alert"
+          class="min-h-[1.25rem] text-sm text-red-600"
+        ></p>
+        <button
+          id="bouton"
+          type="submit"
+          class="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition disabled:opacity-60"
+        >
+          Se connecter
+        </button>
+      </form>
+
+      <p class="mt-4 text-sm text-slate-500">
+        Compte oublié ou bloqué ? Contactez l’administration.
+      </p>
+      <p class="mt-2 text-xs">
+        <a
+          id="lien-dev"
+          href="/"
+          class="text-slate-400 hover:text-indigo-600 underline"
+          hidden
+          >Continuer en mode développement (DEV_AUTH)</a
+        >
+      </p>
+    </main>
+    <script type="module" src="/js/modules/comptes/login.js"></script>
+  </body>
+</html>
