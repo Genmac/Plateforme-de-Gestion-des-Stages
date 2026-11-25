@@ -1,34 +1,46 @@
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
-
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-});
+const { pool } = require('../../src/config/db');
 
 async function runSeed() {
+  //interdire le seeding de données fictives en production avant toute connexion
+  if (process.env.NODE_ENV === 'production') {
+    console.error('Seed-Message(erreur) : L\'exécution des seeds est interdite en production.');
+    process.exitCode = 1;
+    await pool.end();
+    return;
+  }
+
+  //Récupérer et trier les fichiers .sql présents dans le dossier actuel
+  const files = fs.readdirSync(__dirname)
+    .filter(file => file.endsWith('.sql'))
+    .sort();
+
+  if (files.length === 0) {
+    console.log('Seed-Message : Aucun fichier de seed (.sql) trouvé.');
+    await pool.end();
+    return;
+  }
+
   const client = await pool.connect();
+
   try {
-    console.log(' Seed-Message : Lancement du remplissage (seed) de la base de données...');
-    
-    const seedFilePath = path.join(__dirname, '000_socle.sql');
-    if (!fs.existsSync(seedFilePath)) {
-      console.error('Seed-Message(erreur) : Fichier 000_socle.sql introuvable dans db/seeds/.');
-      process.exit(1);
+    console.log('Seed-Message : Démarrage de l\'insertion des seeds (transaction)...');
+    await client.query('BEGIN');
+
+    for (const file of files) {
+      console.log(`Seed-Message : Exécution du seed : ${file}`);
+      const sql = fs.readFileSync(path.join(__dirname, file), 'utf8');
+      await client.query(sql);
+      console.log(`Seed-Message(succes) : Seed chargé : ${file}`);
     }
 
-    const sql = fs.readFileSync(seedFilePath, 'utf8');
-    await client.query(sql);
-
-    console.log('Seed-Message(succes) : Données de test insérées avec succès !');
+    await client.query('COMMIT');
+    console.log('Seed-Message(succes) : Tous les seeds ont été insérés avec succès !');
   } catch (error) {
-    console.error('Seed-Message(erreur) : Erreur lors du seed :', error);
-    process.exit(1);
+    await client.query('ROLLBACK');
+    console.error('Seed-Message(erreur) : Échec et ROLLBACK des seeds :', error.message);
+    process.exitCode = 1;
   } finally {
     client.release();
     await pool.end();
