@@ -4,3 +4,5 @@ uploads/
 logs/
 coverage/
 .DS_Store
+uploads/*
+!uploads/.gitkeep
