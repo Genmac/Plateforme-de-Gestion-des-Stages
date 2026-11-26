@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authentifier, exigerRole } = require('../middleware/auth');
 const ctrl = require('../controllers/conventionController');
+const { options } = require('../controllers/conventionOptionsController');
 
 const lecteurs = exigerRole('etudiant', 'entreprise', 'responsable', 'admin');
 const etudiants = exigerRole('etudiant');
@@ -19,6 +20,7 @@ router.param('id', (req, res, next, id) => {
 });
 
 router.get('/', authentifier, lecteurs, ctrl.lister);
+router.get('/options', authentifier, lecteurs, options); // avant « /:id »
 router.get('/:id', authentifier, lecteurs, ctrl.detail);
 router.post('/', authentifier, etudiants, ctrl.creer);
 router.put('/:id', authentifier, etudiants, ctrl.modifier);

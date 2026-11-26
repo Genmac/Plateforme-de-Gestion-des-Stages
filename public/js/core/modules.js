@@ -1,4 +1,5 @@
-import { manifest as entreprises } from '../modules/entreprises/manifest.js';
+import { manifest as entreprises } from '../modules/entreprises/manifest.js'; // Module B
+import { manifest as conventions } from '../modules/conventions/manifest.js';
 
 export const modulesManifest = [
   // Socle commun
@@ -8,8 +9,8 @@ export const modulesManifest = [
   // { id: 'comptes', label: 'Utilisateurs', route: '#comptes', roles: ['admin', 'responsable'] },
 
   // Module B (Entreprises & Candidatures)
-  entreprises,
+  entreprises, // Module B
 
-  // Module C (Stages & Conventions) — à activer après l'issue socle
-  // { id: 'conventions', label: 'Conventions', route: '#conventions', roles: ['admin', 'responsable', 'etudiant', 'entreprise'] }
+  // Module C (Stages & Conventions)
+  conventions
 ];
