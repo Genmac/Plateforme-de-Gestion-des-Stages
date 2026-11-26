@@ -59,7 +59,7 @@ const SELECT_CONVENTION = `
 // Filtre de visibilité selon le rôle (renvoie { clause, params })
 const filtreVisibilite = (req, debutParam = 1) => {
   const u = req.utilisateur;
-  if (estAdmin(req) && u.role === 'admin') return { clause: '', params: [] };
+  if (u.role === 'admin') return { clause: '', params: [] };
   if (u.role === 'etudiant') return { clause: `s.etudiant_id = $${debutParam}`, params: [u.id] };
   if (u.role === 'entreprise') return { clause: `s.tuteur_id = $${debutParam}`, params: [u.id] };
   if (u.role === 'responsable') return { clause: `s.encadrant_id = $${debutParam}`, params: [u.id] };
@@ -178,7 +178,7 @@ const creer = async (req, res, next) => {
     const d = extraire(req.body);
     verifierFormat(d);
 
-    const convention = await enTransaction(async (client) => {
+    const conventionId = await enTransaction(async (client) => {
       // Verrou sur l'étudiant : sérialise les créations simultanées
       await client.query('SELECT id FROM utilisateurs WHERE id = $1 FOR UPDATE', [req.utilisateur.id]);
 
@@ -207,7 +207,7 @@ const creer = async (req, res, next) => {
       return c.rows[0].id;
     });
 
-    const complet = await chargerConvention(req, convention);
+    const complet = await chargerConvention(req, conventionId);
     res.status(201).json({ success: true, data: complet });
   } catch (err) { next(err); }
 };
@@ -222,8 +222,7 @@ const modifier = async (req, res, next) => {
 
     await enTransaction(async (client) => {
       const cur = await client.query(
-        `SELECT c.id, c.stage_id, c.statut,
-                s.date_debut, s.date_fin
+        `SELECT c.id, c.stage_id, c.statut, s.date_debut, s.date_fin
          FROM conventions c JOIN stages s ON s.id = c.stage_id
          WHERE c.id = $1 AND s.etudiant_id = $2 FOR UPDATE OF c`,
         [req.params.id, req.utilisateur.id]);
@@ -277,10 +276,7 @@ const soumettre = async (req, res, next) => {
 
       // Champs obligatoires : vérifiés seulement ici
       const manquants = OBLIGATOIRES.filter((cle) => estVide(c[cle]));
-      if (manquants.length > 0) {
-        throw erreurMetier(422, 'INCOMPLETE',
-          `Convention incomplète. Champs manquants : ${manquants.join(', ')}.`, { manquants });
-      }
+      if (manquants.length > 0) return { manquants };
 
       await client.query(
         `UPDATE conventions SET statut = 'soumise', motif = NULL, soumise_le = now(), updated_at = now()
@@ -291,6 +287,19 @@ const soumettre = async (req, res, next) => {
         [c.id, c.statut, req.utilisateur.id]);
       return c;
     });
+
+    // Soumission incomplète : on renvoie la liste des champs manquants au client
+    // (gestionnaireErreurs du socle ne transmet que code et message)
+    if (resultat.manquants) {
+      return res.status(422).json({
+        success: false,
+        error: {
+          code: 'INCOMPLETE',
+          message: `Convention incomplète. Champs manquants : ${resultat.manquants.join(', ')}.`,
+          manquants: resultat.manquants
+        }
+      });
+    }
 
     // Notifications (hors transaction) : tuteur et encadrant, sinon administrateurs
     const message = `Une convention a été soumise par ${req.utilisateur.prenom} ${req.utilisateur.nom}.`;
