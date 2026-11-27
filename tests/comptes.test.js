@@ -325,6 +325,107 @@ describe("Module A — Comptes et accès", () => {
       );
     });
 
+    it("modifier un compte : nom et profil partiels, doublon d'e-mail, corps vide, compte inconnu", async () => {
+      const cible = await creerDirect("etudiant", "modif");
+      const res = await admReq(
+        request(app).put(`/api/utilisateurs/${cible.id}`),
+      ).send({ nom: "Nouveau", profil: { niveau: "Master 1" } });
+      assert.equal(res.status, 200);
+      assert.equal(res.body.data.nom, "Nouveau");
+      assert.equal(res.body.data.profil.niveau, "Master 1");
+      assert.equal(
+        res.body.data.profil.filiere,
+        "Génie Informatique",
+        "le champ non envoyé reste inchangé",
+      );
+
+      const doublon = await admReq(
+        request(app).put(`/api/utilisateurs/${cible.id}`),
+      ).send({ email: etudiant.email });
+      assert.equal(doublon.status, 409);
+      assert.equal(doublon.body.error.code, "EMAIL_ALREADY_EXISTS");
+
+      const vide = await admReq(
+        request(app).put(`/api/utilisateurs/${cible.id}`),
+      ).send({});
+      assert.equal(vide.status, 400);
+
+      const inconnu = await admReq(
+        request(app).put("/api/utilisateurs/99999999"),
+      ).send({ nom: "X" });
+      assert.equal(inconnu.status, 404);
+    });
+
+    it("PUT avec rôle : tout ou rien, nom + rôle en une fois, auto-changement refusé", async () => {
+      const cible = await creerDirect("etudiant", "putrole");
+      const url = `/api/utilisateurs/${cible.id}`;
+
+      // Échec (e-mail déjà pris) pendant un changement de rôle : rien ne doit avoir bougé
+      const echec = await admReq(request(app).put(url)).send({
+        email: etudiant.email,
+        role: "entreprise",
+        profil: { entreprise_id: entrepriseId },
+      });
+      assert.equal(echec.status, 409);
+      const apres = await admReq(request(app).get(url));
+      assert.equal(apres.body.data.role, "etudiant");
+      assert.equal(
+        apres.body.data.profil.filiere,
+        "Génie Informatique",
+        "l'ancien profil est intact",
+      );
+
+      // Succès : nom + rôle + profil du nouveau rôle en une seule requête
+      const ok = await admReq(request(app).put(url)).send({
+        nom: "Tuteur",
+        role: "entreprise",
+        profil: { entreprise_id: entrepriseId, fonction: "RH" },
+      });
+      assert.equal(ok.status, 200);
+      assert.equal(ok.body.data.nom, "Tuteur");
+      assert.equal(ok.body.data.role, "entreprise");
+      assert.equal(ok.body.data.profil.entreprise_id, entrepriseId);
+
+      // Rôle seul, sans autre champ : retour à étudiant (profil facultatif)
+      const retour = await admReq(request(app).put(url)).send({
+        role: "etudiant",
+      });
+      assert.equal(retour.status, 200);
+      assert.equal(retour.body.data.role, "etudiant");
+
+      // On ne change pas son propre rôle
+      const soi = await admReq(
+        request(app).put(`/api/utilisateurs/${admin.id}`),
+      ).send({ role: "responsable" });
+      assert.equal(soi.status, 400);
+      assert.equal(soi.body.error.code, "SELF_ACTION");
+    });
+
+    it("attribuer le rôle entreprise : l'entreprise est obligatoire ; auto-changement interdit", async () => {
+      const cible = await creerDirect("etudiant", "versTuteur");
+      const sans = await admReq(
+        request(app).patch(`/api/utilisateurs/${cible.id}/role`),
+      ).send({ role: "entreprise" });
+      assert.equal(sans.status, 400);
+      assert.equal(sans.body.error.code, "VALIDATION_ERROR");
+
+      const avec = await admReq(
+        request(app).patch(`/api/utilisateurs/${cible.id}/role`),
+      ).send({
+        role: "entreprise",
+        profil: { entreprise_id: entrepriseId, fonction: "RH" },
+      });
+      assert.equal(avec.status, 200);
+      assert.equal(avec.body.data.role, "entreprise");
+      assert.equal(avec.body.data.profil.entreprise_id, entrepriseId);
+
+      const soi = await admReq(
+        request(app).patch(`/api/utilisateurs/${admin.id}/role`),
+      ).send({ role: "responsable" });
+      assert.equal(soi.status, 400);
+      assert.equal(soi.body.error.code, "SELF_ACTION");
+    });
+
     it("import CSV : les lignes en erreur sont listées sans bloquer les autres", async () => {
       const csv = [
         "nom,prenom,email,filiere,niveau",

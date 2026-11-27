@@ -202,7 +202,10 @@ module.exports = {
       put: {
         tags: ["Comptes - Utilisateurs (admin)"],
         summary:
-          "Modifier un compte (champs optionnels : nom, prenom, email, profil)",
+          "Modifier un compte : nom, prenom, email, role, profil (une seule transaction)",
+        description:
+          "Champs tous optionnels. Si `role` diffère du rôle actuel, `profil` doit être le profil COMPLET du nouveau rôle " +
+          "(l'ancien profil est supprimé). Sinon `profil` ne contient que les champs à modifier.",
         parameters: [idParam],
         requestBody: corps({
           type: "object",
@@ -210,12 +213,22 @@ module.exports = {
             nom: { type: "string" },
             prenom: { type: "string" },
             email: { type: "string" },
+            role: {
+              type: "string",
+              enum: ["admin", "responsable", "etudiant", "entreprise"],
+            },
             profil,
           },
         }),
         responses: {
           200: reponse("Utilisateur mis à jour"),
-          409: reponse("EMAIL_ALREADY_EXISTS"),
+          400: reponse(
+            "VALIDATION_ERROR, SELF_ACTION (changer son propre rôle)",
+          ),
+          409: reponse(
+            "EMAIL_ALREADY_EXISTS, REFERENCE_CONFLICT, PROFILE_MISSING",
+          ),
+          422: reponse("ENTREPRISE_NOT_FOUND"),
           ...erreursAdmin,
         },
       },

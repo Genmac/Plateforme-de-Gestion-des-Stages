@@ -1,4 +1,8 @@
-// Vue « Utilisateurs » (administration) : liste + recherche/filtres, création de compte, import CSV.
+// Vue « Utilisateurs » (administration) : CRUD complet.
+//   Lire    : liste paginée + recherche/filtres, fiche dans la fenêtre « Modifier »
+//   Créer   : formulaire (mot de passe temporaire affiché une fois) + import CSV
+//   Modifier: nom, prénom, e-mail, rôle et profil dans UNE seule fenêtre (PUT /utilisateurs/:id)
+//   Supprimer (logique) : désactiver / réactiver
 import { apiFetch } from "../../core/api.js";
 import { session } from "../../core/session.js";
 import {
@@ -19,7 +23,9 @@ const TEMPLATE = `
     </div>
   </div>
 
-  <div class="mt-5 flex flex-wrap gap-3">
+  <p id="cpt-message" role="status" aria-live="polite" class="mt-3 min-h-[1.25rem] text-sm text-emerald-700"></p>
+
+  <div class="mt-2 flex flex-wrap gap-3">
     <input id="cpt-recherche" type="search" placeholder="Rechercher par nom, prénom ou e-mail" aria-label="Rechercher"
       class="min-w-[16rem] flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
     <select id="cpt-filtre-role" aria-label="Filtrer par rôle" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
@@ -42,7 +48,7 @@ const TEMPLATE = `
         <tr>
           <th class="px-4 py-2 font-medium">Nom</th><th class="px-4 py-2 font-medium">E-mail</th>
           <th class="px-4 py-2 font-medium">Rôle</th><th class="px-4 py-2 font-medium">Statut</th>
-          <th class="px-4 py-2 font-medium">Dernière connexion</th><th class="px-4 py-2"></th>
+          <th class="px-4 py-2 font-medium">Dernière connexion</th><th class="px-4 py-2 text-right font-medium">Actions</th>
         </tr>
       </thead>
       <tbody id="cpt-corps" class="divide-y divide-slate-100"></tbody>
@@ -56,6 +62,7 @@ const TEMPLATE = `
     </div>
   </div>
 
+  <!-- Création -->
   <dialog id="cpt-dlg-creer" class="w-full max-w-lg rounded-xl p-0 backdrop:bg-slate-900/40">
     <div class="p-6">
       <h3 class="text-lg font-semibold">Créer un compte</h3>
@@ -94,6 +101,38 @@ const TEMPLATE = `
     </div>
   </dialog>
 
+  <!-- Modification -->
+  <dialog id="cpt-dlg-modifier" class="w-full max-w-lg rounded-xl p-0 backdrop:bg-slate-900/40">
+    <div class="p-6">
+      <h3 class="text-lg font-semibold">Modifier le compte</h3>
+      <p id="cpt-info-modif" class="mt-1 text-sm text-slate-500"></p>
+      <form id="cpt-form-modifier" class="mt-4 space-y-3" novalidate>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block text-sm">Nom *<input name="nom" required class="${CLASSE_CHAMP}"></label>
+          <label class="block text-sm">Prénom *<input name="prenom" required class="${CLASSE_CHAMP}"></label>
+        </div>
+        <label class="block text-sm">E-mail *<input name="email" type="email" required class="${CLASSE_CHAMP}"></label>
+        <label class="block text-sm">Rôle *
+          <select id="cpt-role-modif" name="role" class="${CLASSE_CHAMP}">
+            <option value="etudiant">Étudiant</option>
+            <option value="entreprise">Entreprise (tuteur)</option>
+            <option value="responsable">Responsable des stages</option>
+            <option value="admin">Administration</option>
+          </select>
+          <span id="cpt-aide-role-modif" class="mt-1 block text-xs text-slate-500" hidden>Vous ne pouvez pas modifier votre propre rôle.</span>
+        </label>
+        <div id="cpt-champs-profil-modif" class="space-y-3"></div>
+        <p id="cpt-avert-role-modif" class="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800" hidden></p>
+        <p id="cpt-erreur-modif" role="alert" class="text-sm text-red-600"></p>
+        <div class="flex justify-end gap-2 pt-2">
+          <button id="cpt-annuler-modif" type="button" class="${CLASSE_BOUTON_SECONDAIRE}">Annuler</button>
+          <button id="cpt-valider-modif" type="submit" class="${CLASSE_BOUTON}">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Import CSV -->
   <dialog id="cpt-dlg-import" class="w-full max-w-2xl rounded-xl p-0 backdrop:bg-slate-900/40">
     <div class="p-6">
       <h3 class="text-lg font-semibold">Importer des étudiants</h3>
@@ -137,6 +176,93 @@ export async function monter(conteneur) {
   const moi = session.getUser();
   const etat = { page: 1, limite: 20, q: "", role: "", statut: "" };
 
+  // ------------------------------------------------------------ outils communs
+  let minuteurMessage;
+  function afficherMessage(texte) {
+    $("message").textContent = texte;
+    clearTimeout(minuteurMessage);
+    minuteurMessage = setTimeout(() => {
+      $("message").textContent = "";
+    }, 5000);
+  }
+
+  let entreprises = null;
+  async function chargerEntreprises() {
+    if (!entreprises) {
+      try {
+        entreprises = (await apiFetch("/utilisateurs/options/entreprises"))
+          .data;
+      } catch {
+        entreprises = [];
+      }
+    }
+    return entreprises;
+  }
+
+  /** Affiche les champs du profil d'un rôle dans `zone`, préremplis avec `valeurs`. */
+  async function afficherChampsProfil(zone, role, valeurs = {}) {
+    zone.replaceChildren();
+    for (const c of CHAMPS_PROFIL[role] || []) {
+      let champ;
+      if (c.type === "entreprise") {
+        const liste = await chargerEntreprises();
+        champ = el(
+          "select",
+          { name: `profil.${c.nom}`, required: true, class: CLASSE_CHAMP },
+          el(
+            "option",
+            { value: "" },
+            liste.length
+              ? "Choisir une entreprise"
+              : "Aucune entreprise enregistrée",
+          ),
+          liste.map((e) =>
+            el(
+              "option",
+              {
+                value: e.id,
+                selected: String(e.id) === String(valeurs[c.nom]),
+              },
+              e.raison_sociale,
+            ),
+          ),
+        );
+      } else {
+        champ = el("input", {
+          name: `profil.${c.nom}`,
+          value: valeurs[c.nom] ?? "",
+          class: CLASSE_CHAMP,
+        });
+      }
+      zone.append(
+        el(
+          "label",
+          { class: "block text-sm" },
+          c.libelle + (c.requis ? " *" : ""),
+          champ,
+        ),
+      );
+    }
+    if (role === "entreprise" && !(await chargerEntreprises()).length) {
+      zone.append(
+        el(
+          "p",
+          { class: "text-sm text-amber-700" },
+          "Enregistrez d’abord l’entreprise d’accueil avant de rattacher un tuteur.",
+        ),
+      );
+    }
+  }
+
+  /** Lit les champs `profil.*` d'un formulaire sous forme { champ: valeur }. */
+  function lireProfil(formulaire) {
+    const profil = {};
+    for (const [nom, valeur] of new FormData(formulaire)) {
+      if (nom.startsWith("profil.")) profil[nom.slice(7)] = valeur;
+    }
+    return profil;
+  }
+
   // ------------------------------------------------------------ liste
   async function charger() {
     const params = new URLSearchParams({
@@ -179,9 +305,38 @@ export async function monter(conteneur) {
     }
   }
 
+  const action = (libelle, couleur, onclick) =>
+    el(
+      "button",
+      { type: "button", class: `hover:underline ${couleur}`, onclick },
+      libelle,
+    );
+
+  async function basculerStatut(u, actif) {
+    if (
+      actif &&
+      !confirm(
+        `Désactiver le compte de ${u.prenom} ${u.nom} ? Cette personne ne pourra plus se connecter.`,
+      )
+    )
+      return;
+    try {
+      await apiFetch(
+        `/utilisateurs/${u.id}/${actif ? "desactiver" : "activer"}`,
+        { method: "PATCH" },
+      );
+      afficherMessage(
+        `Compte de ${u.prenom} ${u.nom} ${actif ? "désactivé" : "réactivé"}.`,
+      );
+      charger();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
   function ligne(u) {
     const actif = u.statut === "actif";
-    const estMoi = moi && u.id === moi.id;
+    const estMoi = !!moi && u.id === moi.id;
     return el(
       "tr",
       { class: actif ? "" : "bg-slate-50 text-slate-400" },
@@ -209,35 +364,19 @@ export async function monter(conteneur) {
       el("td", { class: "px-4 py-2" }, formaterDate(u.derniere_connexion)),
       el(
         "td",
-        { class: "px-4 py-2 text-right" },
-        estMoi
-          ? null
-          : el(
-              "button",
-              {
-                type: "button",
-                class: `text-sm hover:underline ${actif ? "text-red-600" : "text-indigo-600"}`,
-                onclick: async () => {
-                  if (
-                    actif &&
-                    !confirm(
-                      `Désactiver le compte de ${u.prenom} ${u.nom} ? Cette personne ne pourra plus se connecter.`,
-                    )
-                  )
-                    return;
-                  try {
-                    await apiFetch(
-                      `/utilisateurs/${u.id}/${actif ? "desactiver" : "activer"}`,
-                      { method: "PATCH" },
-                    );
-                    charger();
-                  } catch (e) {
-                    alert(e.message);
-                  }
-                },
-              },
-              actif ? "Désactiver" : "Réactiver",
-            ),
+        { class: "px-4 py-2" },
+        el(
+          "div",
+          { class: "flex justify-end gap-3 text-sm" },
+          action("Modifier", "text-indigo-600", () => ouvrirModification(u)),
+          estMoi
+            ? null
+            : action(
+                actif ? "Désactiver" : "Réactiver",
+                actif ? "text-red-600" : "text-indigo-600",
+                () => basculerStatut(u, actif),
+              ),
+        ),
       ),
     );
   }
@@ -271,86 +410,42 @@ export async function monter(conteneur) {
   });
 
   // ------------------------------------------------------------ création
-  const form = $("form-creer");
-  let entreprises = null;
-
-  async function afficherChampsProfil(role) {
-    const zone = $("champs-profil");
-    zone.replaceChildren();
-    for (const c of CHAMPS_PROFIL[role] || []) {
-      let champ;
-      if (c.type === "entreprise") {
-        if (!entreprises) {
-          try {
-            entreprises = (await apiFetch("/utilisateurs/options/entreprises"))
-              .data;
-          } catch {
-            entreprises = [];
-          }
-        }
-        champ = el(
-          "select",
-          { name: `profil.${c.nom}`, required: true, class: CLASSE_CHAMP },
-          el(
-            "option",
-            { value: "" },
-            entreprises.length
-              ? "Choisir une entreprise"
-              : "Aucune entreprise enregistrée",
-          ),
-          entreprises.map((e) =>
-            el("option", { value: e.id }, e.raison_sociale),
-          ),
-        );
-      } else {
-        champ = el("input", { name: `profil.${c.nom}`, class: CLASSE_CHAMP });
-      }
-      zone.append(
-        el(
-          "label",
-          { class: "block text-sm" },
-          c.libelle + (c.requis ? " *" : ""),
-          champ,
-        ),
-      );
-    }
-  }
+  const formCreer = $("form-creer");
 
   $("btn-creer").addEventListener("click", () => {
-    form.reset();
-    form.hidden = false;
+    formCreer.reset();
+    formCreer.hidden = false;
     $("resultat-creation").hidden = true;
     $("erreur-creation").textContent = "";
-    afficherChampsProfil(form.role.value);
+    afficherChampsProfil($("champs-profil"), formCreer.role.value);
     $("dlg-creer").showModal();
   });
-  form.role.addEventListener("change", (e) =>
-    afficherChampsProfil(e.target.value),
+  formCreer.role.addEventListener("change", (e) =>
+    afficherChampsProfil($("champs-profil"), e.target.value),
   );
   $("annuler-creation").addEventListener("click", () => $("dlg-creer").close());
   $("fermer-creation").addEventListener("click", () => $("dlg-creer").close());
 
-  form.addEventListener("submit", async (ev) => {
+  formCreer.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     $("erreur-creation").textContent = "";
     const profil = {};
-    for (const [nom, valeur] of new FormData(form)) {
-      if (nom.startsWith("profil.") && valeur !== "")
-        profil[nom.slice(7)] = valeur;
+    for (const [nom, valeur] of Object.entries(lireProfil(formCreer))) {
+      if (valeur !== "") profil[nom] = valeur;
     }
     $("valider-creation").disabled = true;
     try {
       const { data } = await apiFetch("/utilisateurs", {
         method: "POST",
         body: JSON.stringify({
-          nom: form.nom.value,
-          prenom: form.prenom.value,
-          email: form.email.value,
-          role: form.role.value,
+          nom: formCreer.nom.value,
+          prenom: formCreer.prenom.value,
+          email: formCreer.email.value,
+          role: formCreer.role.value,
           profil,
         }),
       });
-      form.hidden = true;
+      formCreer.hidden = true;
       $("resultat-creation").hidden = false;
       $("identite").textContent =
         `${data.utilisateur.prenom} ${data.utilisateur.nom} · ${data.utilisateur.email}`;
@@ -369,6 +464,127 @@ export async function monter(conteneur) {
       $("copier").textContent = "Copié";
     } catch {
       /* ignoré */
+    }
+  });
+
+  // ------------------------------------------------------------ modification (PUT /utilisateurs/:id)
+  const formModifier = $("form-modifier");
+  const selectRole = $("role-modif");
+  let edition = null; // { id, role, estMoi, initial: { nom, prenom, email, profil } }
+
+  /** Champs du profil + avertissement selon le rôle sélectionné. */
+  async function mettreAJourProfilModif() {
+    const nouveau = selectRole.value;
+    const identique = nouveau === edition.role;
+    // Même rôle : profil actuel prérempli. Autre rôle : profil vierge à renseigner.
+    await afficherChampsProfil(
+      $("champs-profil-modif"),
+      nouveau,
+      identique ? edition.initial.profil : {},
+    );
+    const avert = $("avert-role-modif");
+    const ancien = CHAMPS_PROFIL[edition.role] || [];
+    avert.hidden = identique;
+    avert.textContent = identique
+      ? ""
+      : `Changement de « ${LIBELLES_ROLES[edition.role] || edition.role} » vers « ${LIBELLES_ROLES[nouveau]} ».` +
+        (ancien.length
+          ? ` Le profil actuel (${ancien.map((c) => c.libelle.toLowerCase()).join(", ")}) sera supprimé.`
+          : "") +
+        ((CHAMPS_PROFIL[nouveau] || []).length
+          ? " Renseignez le profil du nouveau rôle."
+          : "");
+  }
+
+  async function ouvrirModification(u) {
+    let detail;
+    try {
+      detail = (await apiFetch(`/utilisateurs/${u.id}`)).data;
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
+    formModifier.reset();
+    $("erreur-modif").textContent = "";
+    formModifier.nom.value = detail.nom;
+    formModifier.prenom.value = detail.prenom;
+    formModifier.email.value = detail.email;
+    $("info-modif").textContent =
+      `${detail.statut === "actif" ? "Actif" : "Désactivé"} · dernière connexion : ${formaterDate(detail.derniere_connexion)}`;
+    const estMoi = !!moi && detail.id === moi.id;
+    edition = {
+      id: detail.id,
+      role: detail.role,
+      estMoi,
+      initial: {
+        nom: detail.nom,
+        prenom: detail.prenom,
+        email: detail.email,
+        profil: detail.profil || {},
+      },
+    };
+    selectRole.value = detail.role;
+    selectRole.disabled = estMoi; // le serveur refuse aussi l'auto-changement de rôle
+    $("aide-role-modif").hidden = !estMoi;
+    await mettreAJourProfilModif();
+    $("dlg-modifier").showModal();
+  }
+
+  selectRole.addEventListener("change", mettreAJourProfilModif);
+  $("annuler-modif").addEventListener("click", () => $("dlg-modifier").close());
+
+  formModifier.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    $("erreur-modif").textContent = "";
+
+    // On n'envoie que ce qui a changé (modification partielle)
+    const corps = {};
+    for (const champ of ["nom", "prenom", "email"]) {
+      const valeur = formModifier[champ].value.trim();
+      if (valeur !== edition.initial[champ]) corps[champ] = valeur;
+    }
+
+    const roleChange = selectRole.value !== edition.role;
+    if (roleChange) {
+      // Autre rôle : le profil du nouveau rôle est envoyé en entier
+      corps.role = selectRole.value;
+      corps.profil = {};
+      for (const [nom, valeur] of Object.entries(lireProfil(formModifier))) {
+        if (valeur !== "") corps.profil[nom] = valeur;
+      }
+    } else {
+      // Même rôle : seulement les champs du profil réellement modifiés
+      const profil = {};
+      for (const [nom, valeur] of Object.entries(lireProfil(formModifier))) {
+        if (String(valeur) !== String(edition.initial.profil[nom] ?? ""))
+          profil[nom] = valeur;
+      }
+      if (Object.keys(profil).length) corps.profil = profil;
+    }
+
+    if (!Object.keys(corps).length) {
+      $("erreur-modif").textContent = "Aucune modification à enregistrer.";
+      return;
+    }
+
+    $("valider-modif").disabled = true;
+    try {
+      const { data } = await apiFetch(`/utilisateurs/${edition.id}`, {
+        method: "PUT",
+        body: JSON.stringify(corps),
+      });
+      if (edition.estMoi) session.setUser({ ...moi, ...data }); // garde la session à jour
+      $("dlg-modifier").close();
+      afficherMessage(
+        roleChange
+          ? `Compte de ${data.prenom} ${data.nom} mis à jour : nouveau rôle « ${LIBELLES_ROLES[data.role]} ».`
+          : `Compte de ${data.prenom} ${data.nom} mis à jour.`,
+      );
+      charger();
+    } catch (e) {
+      $("erreur-modif").textContent = e.message;
+    } finally {
+      $("valider-modif").disabled = false;
     }
   });
 

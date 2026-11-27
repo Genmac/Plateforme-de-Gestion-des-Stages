@@ -95,10 +95,39 @@ const creer = gerer(async (req, res) => {
   });
 });
 
-/** PUT /api/utilisateurs/:id (modification partielle : nom, prenom, email, profil) */
+/**
+ * Change le rôle dans la transaction `c` : supprime l'ancien profil, met à jour role_id, crée le nouveau profil.
+ * Partagé par PUT /:id (champ `role`) et PATCH /:id/role.
+ */
+async function appliquerChangementRole(c, id, ancienRole, nouveauRole, profil) {
+  if (nouveauRole === "entreprise")
+    await svc.verifierEntreprise(c, profil.entreprise_id);
+  const ancienne = svc.PROFILS[ancienRole];
+  if (ancienne && ancienne.table) {
+    await c.query(`DELETE FROM ${ancienne.table} WHERE utilisateur_id = $1`, [
+      id,
+    ]);
+  }
+  await c.query(
+    "UPDATE utilisateurs SET role_id = (SELECT id FROM roles WHERE nom = $1), updated_at = NOW() WHERE id = $2",
+    [nouveauRole, id],
+  );
+  await svc.insererProfil(c, nouveauRole, id, profil);
+}
+
+/**
+ * PUT /api/utilisateurs/:id — modification partielle, en une seule transaction :
+ *   nom, prenom, email, role (optionnel), profil.
+ * Si `role` est différent du rôle actuel, `profil` est le profil COMPLET du nouveau rôle.
+ * Sinon, `profil` ne contient que les champs à modifier.
+ */
 const modifier = gerer(async (req, res) => {
   const id = idParam(req);
-  const { champs, profilBrut } = svc.validerModification(req.body);
+  const {
+    champs,
+    profilBrut,
+    role: roleDemande,
+  } = svc.validerModification(req.body);
 
   await svc.transaction(async (c) => {
     const cur = await c.query(
@@ -108,7 +137,15 @@ const modifier = gerer(async (req, res) => {
     );
     if (!cur.rowCount)
       throw erreur(404, "USER_NOT_FOUND", "Utilisateur introuvable.");
-    const role = cur.rows[0].role;
+    const roleActuel = cur.rows[0].role;
+    const changeRole = roleDemande !== undefined && roleDemande !== roleActuel;
+    if (changeRole && id === req.utilisateur.id) {
+      throw erreur(
+        400,
+        "SELF_ACTION",
+        "Vous ne pouvez pas changer votre propre rôle.",
+      );
+    }
 
     const entrees = Object.entries(champs);
     if (entrees.length) {
@@ -119,8 +156,13 @@ const modifier = gerer(async (req, res) => {
       );
     }
 
-    if (profilBrut !== undefined) {
-      const def = svc.PROFILS[role];
+    if (changeRole) {
+      const v = new svc.Validateur();
+      const profil = svc.validerProfil(v, roleDemande, profilBrut);
+      v.verifier();
+      await appliquerChangementRole(c, id, roleActuel, roleDemande, profil);
+    } else if (profilBrut !== undefined) {
+      const def = svc.PROFILS[roleActuel];
       if (!def || !def.table)
         throw erreur(
           400,
@@ -128,11 +170,11 @@ const modifier = gerer(async (req, res) => {
           "Ce rôle n'a pas de profil modifiable.",
         );
       const v = new svc.Validateur();
-      const p = svc.validerProfil(v, role, profilBrut, true);
+      const p = svc.validerProfil(v, roleActuel, profilBrut, true);
       v.verifier();
       const cp = Object.entries(p);
       if (cp.length) {
-        if (role === "entreprise" && p.entreprise_id)
+        if (roleActuel === "entreprise" && p.entreprise_id)
           await svc.verifierEntreprise(c, p.entreprise_id);
         const r = await c.query(
           `UPDATE ${def.table} SET ${cp.map(([k], i) => `${k} = $${i + 1}`).join(", ")}
@@ -143,7 +185,7 @@ const modifier = gerer(async (req, res) => {
           throw erreur(
             409,
             "PROFILE_MISSING",
-            "Profil absent : utilisez l'attribution de rôle pour le créer.",
+            "Profil absent : indiquez un rôle et son profil complet pour le créer.",
           );
         }
       }
@@ -154,7 +196,7 @@ const modifier = gerer(async (req, res) => {
     .json({ success: true, data: await svc.chargerUtilisateur(id) });
 });
 
-/** PATCH /api/utilisateurs/:id/role  { role, profil } */
+/** PATCH /api/utilisateurs/:id/role  { role, profil } (équivalent à PUT avec seulement `role`) */
 const changerRole = gerer(async (req, res) => {
   const id = idParam(req);
   if (id === req.utilisateur.id)
@@ -182,20 +224,7 @@ const changerRole = gerer(async (req, res) => {
     const ancienRole = cur.rows[0].role;
     if (ancienRole === nouveauRole)
       throw erreur(400, "SAME_ROLE", "L'utilisateur a déjà ce rôle.");
-
-    if (nouveauRole === "entreprise")
-      await svc.verifierEntreprise(c, profil.entreprise_id);
-    const ancienne = svc.PROFILS[ancienRole];
-    if (ancienne && ancienne.table) {
-      await c.query(`DELETE FROM ${ancienne.table} WHERE utilisateur_id = $1`, [
-        id,
-      ]);
-    }
-    await c.query(
-      "UPDATE utilisateurs SET role_id = (SELECT id FROM roles WHERE nom = $1), updated_at = NOW() WHERE id = $2",
-      [nouveauRole, id],
-    );
-    await svc.insererProfil(c, nouveauRole, id, profil);
+    await appliquerChangementRole(c, id, ancienRole, nouveauRole, profil);
   });
   res
     .status(200)

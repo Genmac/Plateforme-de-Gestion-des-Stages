@@ -1,5 +1,5 @@
-const { Pool } = require('pg');
-require('dotenv').config();
+const { Pool } = require("pg");
+require("dotenv").config();
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -9,12 +9,17 @@ const pool = new Pool({
   database: process.env.DB_NAME,
 });
 
-pool.on('connect', () => {
-  console.log(' Message : Connecté à la base de données PostgreSQL avec succès.');
+pool.on("connect", () => {
+  console.log(
+    " Message : Connecté à la base de données PostgreSQL avec succès.",
+  );
 });
 
-pool.on('error', (err) => {
-  console.error('Message(erreur) : Erreur inattendue sur le client PostgreSQL :', err);
+pool.on("error", (err) => {
+  console.error(
+    "Message(erreur) : Erreur inattendue sur le client PostgreSQL :",
+    err,
+  );
   process.exit(-1);
 });
 

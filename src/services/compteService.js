@@ -171,15 +171,21 @@ function validerModification(body = {}) {
   if (body.prenom !== undefined)
     champs.prenom = v.texte(body.prenom, "prenom", { requis: true });
   if (body.email !== undefined) champs.email = v.email(body.email);
+  const role =
+    body.role === undefined ? undefined : v.choix(body.role, "role", ROLES);
   v.verifier();
-  if (!Object.keys(champs).length && body.profil === undefined) {
+  if (
+    !Object.keys(champs).length &&
+    body.profil === undefined &&
+    role === undefined
+  ) {
     throw erreur(
       400,
       "VALIDATION_ERROR",
-      "Aucun champ à modifier (nom, prenom, email, profil).",
+      "Aucun champ à modifier (nom, prenom, email, role, profil).",
     );
   }
-  return { champs, profilBrut: body.profil };
+  return { champs, profilBrut: body.profil, role };
 }
 
 function validerNouveauMotDePasse(body = {}) {
