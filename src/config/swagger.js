@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Fabriques de morceaux réutilisés (évitent de répéter les mêmes blocs)
+// Fabriques de morceaux réutilisés
 // ---------------------------------------------------------------------------
 const parametreId = (nom = 'id', description = 'Identifiant numérique') => ({
   name: nom, in: 'path', required: true, description, schema: { type: 'integer' }
@@ -32,26 +32,22 @@ const corpsJson = (schema, requis = true) => ({
   content: { 'application/json': { schema } }
 });
 
+const STATUTS_CANDIDATURE = ['envoyee', 'en_attente', 'entretien', 'acceptee', 'refusee', 'retiree'];
+const STATUTS_CONVENTION = ['brouillon', 'soumise', 'validee', 'refusee', 'a_corriger'];
+
 const swaggerSpec = {
   openapi: '3.0.0',
   info: {
     title: 'API Gestion des Stages',
     version: '1.0.0',
-    description: 'Documentation API du socle et des modules (Comptes, Entreprises & Candidatures, Conventions).'
+    description: 'Documentation API du socle et des modules (Comptes, Entreprises & Candidatures, Stages & Conventions).'
   },
   servers: [
-    {
-      url: 'http://localhost:3000/api',
-      description: 'Serveur de développement local'
-    }
+    { url: 'http://localhost:3000/api', description: 'Serveur de développement local' }
   ],
   components: {
     securitySchemes: {
-      bearerAuth: {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT'
-      },
+      bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       devUserHeader: {
         type: 'apiKey',
         in: 'header',
@@ -73,6 +69,8 @@ const swaggerSpec = {
           }
         }
       },
+
+      // ------------------------------------------------ Module B
       Entreprise: {
         type: 'object',
         properties: {
@@ -100,10 +98,7 @@ const swaggerSpec = {
           contact_email: { type: 'string' },
           contact_telephone: { type: 'string' },
           site_web: { type: 'string' },
-          confirmer_doublon: {
-            type: 'boolean',
-            description: 'true pour créer malgré l\'alerte de doublon (409)'
-          }
+          confirmer_doublon: { type: 'boolean', description: 'true pour créer malgré l\'alerte de doublon (409)' }
         }
       },
       Candidature: {
@@ -116,10 +111,7 @@ const swaggerSpec = {
           poste: { type: 'string' },
           contact: { type: 'string', nullable: true },
           date_candidature: { type: 'string', format: 'date' },
-          statut: {
-            type: 'string',
-            enum: ['envoyee', 'en_attente', 'entretien', 'acceptee', 'refusee', 'retiree']
-          },
+          statut: { type: 'string', enum: STATUTS_CANDIDATURE },
           created_at: { type: 'string', format: 'date-time' }
         }
       },
@@ -152,6 +144,62 @@ const swaggerSpec = {
           taille: { type: 'integer', description: 'En octets' },
           depose_le: { type: 'string', format: 'date-time' }
         }
+      },
+
+      // ------------------------------------------------ Module C
+      Convention: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          stage_id: { type: 'integer' },
+          statut: { type: 'string', enum: STATUTS_CONVENTION },
+          motif: { type: 'string', nullable: true, description: 'Renseigné en cas de refus ou de correction' },
+          soumise_le: { type: 'string', format: 'date-time', nullable: true },
+          etudiant_id: { type: 'integer' },
+          etudiant: { type: 'string' },
+          entreprise_id: { type: 'integer', nullable: true },
+          entreprise: { type: 'string', nullable: true },
+          tuteur_id: { type: 'integer', nullable: true },
+          tuteur: { type: 'string', nullable: true },
+          encadrant_id: { type: 'integer', nullable: true },
+          encadrant: { type: 'string', nullable: true },
+          candidature_id: { type: 'integer', nullable: true, description: 'Lien par identifiant, sans clé étrangère' },
+          origine: { type: 'string', enum: ['initiative_etudiant', 'envoi_departement', 'demande_entreprise'] },
+          sujet: { type: 'string', nullable: true },
+          missions: { type: 'string', nullable: true },
+          gratification: { type: 'number', nullable: true },
+          date_debut: { type: 'string', format: 'date', nullable: true },
+          date_fin: { type: 'string', format: 'date', nullable: true },
+          statut_stage: { type: 'string', enum: ['actif', 'termine', 'annule'] },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      ConventionEntree: {
+        type: 'object',
+        description: 'Tous les champs sont facultatifs pour un brouillon ; les champs obligatoires sont vérifiés à la soumission.',
+        properties: {
+          entreprise_id: { type: 'integer' },
+          tuteur_id: { type: 'integer', description: 'Utilisateur de rôle « entreprise »' },
+          candidature_id: { type: 'integer' },
+          origine: { type: 'string', enum: ['initiative_etudiant', 'envoi_departement', 'demande_entreprise'] },
+          sujet: { type: 'string' },
+          missions: { type: 'string' },
+          gratification: { type: 'number', minimum: 0 },
+          date_debut: { type: 'string', format: 'date' },
+          date_fin: { type: 'string', format: 'date', description: 'Postérieure à date_debut' }
+        }
+      },
+      HistoriqueConvention: {
+        type: 'object',
+        properties: {
+          ancien_statut: { type: 'string', nullable: true },
+          nouveau_statut: { type: 'string' },
+          commentaire: { type: 'string', nullable: true },
+          change_par: { type: 'integer', nullable: true },
+          auteur: { type: 'string', nullable: true },
+          change_le: { type: 'string', format: 'date-time' }
+        }
       }
     }
   },
@@ -162,9 +210,7 @@ const swaggerSpec = {
       get: {
         summary: 'Lister les notifications de l’utilisateur connecté',
         tags: ['Socle - Notifications'],
-        responses: {
-          200: { description: 'Liste des notifications récupérée avec succès' }
-        }
+        responses: { 200: { description: 'Liste des notifications récupérée avec succès' } }
       }
     },
 
@@ -172,12 +218,11 @@ const swaggerSpec = {
     '/entreprises': {
       get: {
         summary: 'Lister et rechercher les entreprises',
-        description: 'Admin / responsable : toutes les entreprises (filtre `statut` possible). ' +
-          'Étudiant : entreprises validées et ses propres propositions.',
+        description: 'Admin / responsable : toutes (filtre `statut` possible). Étudiant : validées et ses propositions.',
         tags: ['Entreprises'],
         parameters: [
-          { name: 'q', in: 'query', description: 'Recherche par nom (insensible à la casse)', schema: { type: 'string' } },
-          { name: 'statut', in: 'query', description: 'Filtre (admin / responsable uniquement)',
+          { name: 'q', in: 'query', description: 'Recherche par nom', schema: { type: 'string' } },
+          { name: 'statut', in: 'query', description: 'Filtre (admin / responsable)',
             schema: { type: 'string', enum: ['a_valider', 'validee', 'rejetee'] } }
         ],
         responses: {
@@ -187,9 +232,8 @@ const swaggerSpec = {
       },
       post: {
         summary: 'Créer ou proposer une entreprise',
-        description: 'Admin / responsable : créée directement « validée ». Étudiant : créée « à valider » ' +
-          'et l\'administration est notifiée. Un nom déjà existant renvoie 409 `DUPLICATE_WARNING` ' +
-          'avec la liste des doublons ; renvoyer avec `confirmer_doublon: true` pour forcer.',
+        description: 'Admin / responsable : créée « validée ». Étudiant : « à valider » et l\'administration est notifiée. ' +
+          'Un nom existant renvoie 409 `DUPLICATE_WARNING` ; renvoyer avec `confirmer_doublon: true` pour forcer.',
         tags: ['Entreprises'],
         requestBody: corpsJson({ $ref: '#/components/schemas/EntrepriseEntree' }),
         responses: {
@@ -213,7 +257,6 @@ const swaggerSpec = {
       },
       put: {
         summary: 'Modifier une entreprise (admin / responsable)',
-        description: 'Les champs omis restent inchangés.',
         tags: ['Entreprises'],
         parameters: [parametreId()],
         requestBody: corpsJson({ $ref: '#/components/schemas/EntrepriseEntree' }),
@@ -227,7 +270,6 @@ const swaggerSpec = {
     '/entreprises/{id}/valider': {
       patch: {
         summary: 'Valider une entreprise proposée (admin / responsable)',
-        description: 'Seules les entreprises « à valider » sont traitables. Le proposant est notifié.',
         tags: ['Entreprises'],
         parameters: [parametreId()],
         responses: {
@@ -254,7 +296,7 @@ const swaggerSpec = {
     '/candidatures': {
       get: {
         summary: 'Lister les candidatures',
-        description: 'Étudiant : uniquement les siennes. Admin / responsable : toutes (lecture seule).',
+        description: 'Étudiant : les siennes. Admin / responsable : toutes (lecture seule).',
         tags: ['Candidatures'],
         responses: {
           200: reponseOk('Liste des candidatures', { type: 'array', items: { $ref: '#/components/schemas/Candidature' } }),
@@ -263,7 +305,6 @@ const swaggerSpec = {
       },
       post: {
         summary: 'Enregistrer une candidature (étudiant)',
-        description: 'Statut initial « envoyee », première ligne d\'historique créée dans la même transaction.',
         tags: ['Candidatures'],
         requestBody: corpsJson({ $ref: '#/components/schemas/CandidatureEntree' }),
         responses: {
@@ -278,7 +319,6 @@ const swaggerSpec = {
     '/candidatures/{id}': {
       get: {
         summary: 'Détail d\'une candidature avec historique et documents',
-        description: 'Un étudiant ne peut lire que ses propres candidatures (404 sinon).',
         tags: ['Candidatures'],
         parameters: [parametreId()],
         responses: {
@@ -302,23 +342,19 @@ const swaggerSpec = {
     '/candidatures/{id}/statut': {
       patch: {
         summary: 'Changer le statut d\'une candidature (étudiant propriétaire)',
-        description: 'Statuts : envoyee, en_attente, entretien, acceptee, refusee, retiree. ' +
-          '« refusee » et « retiree » sont définitifs. Passer à « acceptee » exige un document ' +
-          '`preuve_acceptation` (422 `PROOF_REQUIRED` sinon). Chaque changement est daté dans l\'historique.',
+        description: '« refusee » et « retiree » sont définitifs. « acceptee » exige une `preuve_acceptation` (422 `PROOF_REQUIRED`).',
         tags: ['Candidatures'],
         parameters: [parametreId()],
         requestBody: corpsJson({
           type: 'object',
           required: ['statut'],
-          properties: {
-            statut: { type: 'string', enum: ['envoyee', 'en_attente', 'entretien', 'acceptee', 'refusee', 'retiree'] }
-          }
+          properties: { statut: { type: 'string', enum: STATUTS_CANDIDATURE } }
         }),
         responses: {
           200: reponseOk('Statut mis à jour', { $ref: '#/components/schemas/Candidature' }),
           400: reponseErreur('Statut invalide (VALIDATION_ERROR)'),
           404: reponseErreur('Introuvable ou appartenant à un autre étudiant'),
-          409: reponseErreur('Même statut (SAME_STATUS) ou candidature clôturée (FINAL_STATUS)'),
+          409: reponseErreur('Même statut (SAME_STATUS) ou clôturée (FINAL_STATUS)'),
           422: reponseErreur('Preuve d\'acceptation manquante (PROOF_REQUIRED)'),
           ...reponsesCommunes
         }
@@ -327,8 +363,7 @@ const swaggerSpec = {
     '/candidatures/{id}/documents': {
       post: {
         summary: 'Déposer un document (étudiant propriétaire)',
-        description: 'PDF, JPEG, PNG ou WEBP, 10 Mo maximum. Le contenu réel du fichier est vérifié ' +
-          '(pas seulement le type déclaré). Un nouveau dépôt du même type remplace le précédent.',
+        description: 'PDF, JPEG, PNG ou WEBP, 10 Mo maximum, contenu réel vérifié. Un nouveau dépôt du même type remplace le précédent.',
         tags: ['Candidatures'],
         parameters: [parametreId()],
         requestBody: {
@@ -348,7 +383,7 @@ const swaggerSpec = {
         },
         responses: {
           201: reponseOk('Document enregistré', { $ref: '#/components/schemas/Document' }),
-          400: reponseErreur('Type de document invalide, fichier absent, type non autorisé (INVALID_FILE_TYPE) ou contenu falsifié (INVALID_FILE_CONTENT)'),
+          400: reponseErreur('Type invalide, fichier absent, INVALID_FILE_TYPE ou INVALID_FILE_CONTENT'),
           404: reponseErreur('Candidature introuvable ou appartenant à un autre étudiant'),
           409: reponseErreur('Candidature clôturée (FINAL_STATUS)'),
           413: reponseErreur('Fichier de plus de 10 Mo (FILE_TOO_LARGE)'),
@@ -359,12 +394,177 @@ const swaggerSpec = {
     '/candidatures/{id}/documents/{docId}': {
       get: {
         summary: 'Télécharger un document',
-        description: 'Propriétaire, admin ou responsable. Les fichiers ne sont pas accessibles autrement.',
         tags: ['Candidatures'],
         parameters: [parametreId(), parametreId('docId', 'Identifiant du document')],
         responses: {
           200: { description: 'Contenu du fichier', content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } } },
           404: reponseErreur('Document introuvable ou non autorisé'),
+          ...reponsesCommunes
+        }
+      }
+    },
+
+    // ----------------------------------------------------------- Conventions
+    '/conventions': {
+      get: {
+        summary: 'Lister les conventions',
+        description: 'Étudiant : les siennes. Tuteur (`entreprise`) : celles où il est désigné. ' +
+          'Responsable : celles de ses stages. Admin : toutes. `a_traiter=true` ne garde que les conventions soumises.',
+        tags: ['Conventions'],
+        parameters: [
+          { name: 'a_traiter', in: 'query', description: 'true : conventions en attente de décision', schema: { type: 'boolean' } },
+          { name: 'statut', in: 'query', schema: { type: 'string', enum: STATUTS_CONVENTION } }
+        ],
+        responses: {
+          200: reponseOk('Liste des conventions', { type: 'array', items: { $ref: '#/components/schemas/Convention' } }),
+          ...reponsesCommunes
+        }
+      },
+      post: {
+        summary: 'Créer un stage et sa convention en brouillon (étudiant)',
+        description: 'Les champs obligatoires ne sont pas exigés pour un brouillon. Un seul stage actif par étudiant.',
+        tags: ['Conventions'],
+        requestBody: corpsJson({ $ref: '#/components/schemas/ConventionEntree' }, false),
+        responses: {
+          201: reponseOk('Brouillon créé', { $ref: '#/components/schemas/Convention' }),
+          400: reponseErreur('Format invalide ou dates incohérentes (VALIDATION_ERROR, INVALID_DATES)'),
+          409: reponseErreur('Stage actif déjà existant (ACTIVE_STAGE_EXISTS)'),
+          422: reponseErreur('Entreprise introuvable ou tuteur invalide (ENTREPRISE_NOT_FOUND, INVALID_TUTOR)'),
+          ...reponsesCommunes
+        }
+      }
+    },
+    '/conventions/options': {
+      get: {
+        summary: 'Données du formulaire de convention',
+        description: 'Entreprises disposant d\'un compte tuteur ; liste des encadrants pour admin / responsable.',
+        tags: ['Conventions'],
+        responses: {
+          200: reponseOk('Options', {
+            type: 'object',
+            properties: {
+              entreprises: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'integer' },
+                    raison_sociale: { type: 'string' },
+                    tuteur_id: { type: 'integer' }
+                  }
+                }
+              },
+              encadrants: {
+                type: 'array',
+                items: { type: 'object', properties: { id: { type: 'integer' }, nom: { type: 'string' } } }
+              }
+            }
+          }),
+          ...reponsesCommunes
+        }
+      }
+    },
+    '/conventions/{id}': {
+      get: {
+        summary: 'Fiche d\'une convention avec historique',
+        description: '404 si la convention n\'est pas visible pour le rôle (existence non révélée).',
+        tags: ['Conventions'],
+        parameters: [parametreId()],
+        responses: {
+          200: reponseOk('Convention détaillée', {
+            allOf: [
+              { $ref: '#/components/schemas/Convention' },
+              {
+                type: 'object',
+                properties: {
+                  historique: { type: 'array', items: { $ref: '#/components/schemas/HistoriqueConvention' } }
+                }
+              }
+            ]
+          }),
+          404: reponseErreur('Introuvable ou non visible'),
+          ...reponsesCommunes
+        }
+      },
+      put: {
+        summary: 'Modifier ou reprendre un brouillon (étudiant propriétaire)',
+        description: 'Possible pour les statuts « brouillon » et « a_corriger » uniquement.',
+        tags: ['Conventions'],
+        parameters: [parametreId()],
+        requestBody: corpsJson({ $ref: '#/components/schemas/ConventionEntree' }),
+        responses: {
+          200: reponseOk('Convention modifiée', { $ref: '#/components/schemas/Convention' }),
+          400: reponseErreur('Format invalide ou dates incohérentes'),
+          404: reponseErreur('Introuvable ou appartenant à un autre étudiant'),
+          409: reponseErreur('Convention verrouillée (LOCKED)'),
+          422: reponseErreur('Entreprise introuvable ou tuteur invalide'),
+          ...reponsesCommunes
+        }
+      }
+    },
+    '/conventions/{id}/soumettre': {
+      post: {
+        summary: 'Soumettre la convention (étudiant propriétaire)',
+        description: 'Vérifie les champs obligatoires. Notifie le tuteur et l\'encadrant (à défaut, les administrateurs).',
+        tags: ['Conventions'],
+        parameters: [parametreId()],
+        responses: {
+          200: reponseOk('Convention soumise', { $ref: '#/components/schemas/Convention' }),
+          404: reponseErreur('Introuvable ou appartenant à un autre étudiant'),
+          409: reponseErreur('Convention verrouillée (LOCKED)'),
+          422: reponseErreur('Champs obligatoires manquants (INCOMPLETE, champ error.manquants)'),
+          ...reponsesCommunes
+        }
+      }
+    },
+    '/conventions/{id}/decision': {
+      patch: {
+        summary: 'Valider, refuser ou demander une correction (encadrant du stage ou admin)',
+        description: 'Uniquement sur une convention « soumise ». Le motif est obligatoire pour `refusee` et `a_corriger`. L\'étudiant est notifié.',
+        tags: ['Conventions'],
+        parameters: [parametreId()],
+        requestBody: corpsJson({
+          type: 'object',
+          required: ['decision'],
+          properties: {
+            decision: { type: 'string', enum: ['validee', 'refusee', 'a_corriger'] },
+            motif: { type: 'string' }
+          }
+        }),
+        responses: {
+          200: reponseOk('Décision enregistrée', { $ref: '#/components/schemas/Convention' }),
+          400: reponseErreur('Décision invalide ou motif manquant (MOTIF_REQUIRED)'),
+          404: reponseErreur('Introuvable ou stage non affecté à cet encadrant'),
+          409: reponseErreur('Convention non soumise (NOT_SUBMITTED)'),
+          ...reponsesCommunes
+        }
+      }
+    },
+
+    // ----------------------------------------------------------------- Stages
+    '/stages/{id}/encadrant': {
+      patch: {
+        summary: 'Affecter un encadrant académique à un stage (admin / responsable)',
+        description: 'L\'encadrant doit avoir le rôle `responsable`. L\'encadrant et l\'étudiant sont notifiés.',
+        tags: ['Stages'],
+        parameters: [parametreId('id', 'Identifiant du stage')],
+        requestBody: corpsJson({
+          type: 'object',
+          required: ['encadrant_id'],
+          properties: { encadrant_id: { type: 'integer' } }
+        }),
+        responses: {
+          200: reponseOk('Encadrant affecté', {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              etudiant_id: { type: 'integer' },
+              encadrant_id: { type: 'integer' }
+            }
+          }),
+          400: reponseErreur('encadrant_id manquant'),
+          404: reponseErreur('Stage introuvable'),
+          422: reponseErreur('Encadrant invalide (INVALID_SUPERVISOR)'),
           ...reponsesCommunes
         }
       }
