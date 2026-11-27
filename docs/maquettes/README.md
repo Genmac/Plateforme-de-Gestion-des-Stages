@@ -42,3 +42,37 @@ L'administration voit toutes les candidatures en lecture seule.
 
 Changement de statut (« acceptée » exige une preuve d'acceptation), dépôt de documents
 (CV, lettre, preuve ; PDF ou image, 10 Mo maximum), téléchargement protégé et historique daté des statuts.
+
+
+
+---
+
+# Module C : Stages & Conventions (issue #16)
+
+Navigation par hash : `#conventions`, `#conventions/nouvelle`, `#conventions/<id>`, `#conventions/<id>/modifier`.
+
+## 1. Liste (étudiant)
+![Liste](c-01-liste-etudiant.png)
+
+## 2. Formulaire en étapes : entreprise
+![Étape 1](c-02-formulaire-etape1.png)
+
+Quatre étapes (entreprise, sujet et missions, durée et gratification, récapitulatif). Chaque étape enregistre le brouillon.
+
+## 3. Récapitulatif avant soumission
+![Récapitulatif](c-03-formulaire-recap.png)
+
+À la soumission, un champ manquant ramène à l'étape concernée.
+
+## 4. Fiche d'une convention
+![Fiche](c-04-fiche-convention.png)
+
+Statut, informations, motif éventuel et historique de chaque changement (qui, quand, avant, après, commentaire).
+
+## 5. Liste à traiter (administration, encadrant)
+![À traiter](c-05-liste-a-traiter.png)
+
+## 6. Décision
+![Décision](c-06-decision.png)
+
+Valider, demander une correction ou refuser ; motif obligatoire pour les deux derniers. L'administration affecte aussi l'encadrant académique.
